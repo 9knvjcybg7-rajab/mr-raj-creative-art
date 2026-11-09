@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://9knvjcybg7-rajab.github.io/mr-raj-creative-art/sitemap.xml
