@@ -29,8 +29,6 @@ const courses = [
 ];
 
 const courseGrid = document.querySelector("#course-grid");
-const enrollDialog = document.querySelector("#enroll-dialog");
-const enrollCourse = document.querySelector("#enroll-course");
 const toast = document.querySelector(".toast");
 
 function renderCourses() {
@@ -47,27 +45,11 @@ function renderCourses() {
         <p>${course.description}</p>
         <div class="course-footer">
           <span class="course-meta"><strong>${course.lessons} lessons</strong> &nbsp;·&nbsp; ${course.level}</span>
-          <button class="course-enroll" type="button" data-action="enroll" data-course="${course.title}" aria-label="Enrol in ${course.title}">↗</button>
+          <a class="course-enroll" href="#enrol" data-course="${course.title}" aria-label="Enrol in ${course.title}">↗</a>
         </div>
       </div>
     </article>
   `).join("");
-}
-
-function getSavedList(key) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.warn(`Could not read ${key} from local storage.`, error);
-    return [];
-  }
-}
-
-function saveEntry(key, entry) {
-  const entries = getSavedList(key);
-  entries.push({ ...entry, createdAt: new Date().toISOString() });
-  localStorage.setItem(key, JSON.stringify(entries));
 }
 
 function showToast(message) {
@@ -77,40 +59,76 @@ function showToast(message) {
 }
 
 document.addEventListener("click", (event) => {
-  const trigger = event.target.closest("[data-action='enroll']");
+  const trigger = event.target.closest("[data-course]");
   if (!trigger) return;
-  enrollCourse.value = trigger.dataset.course || courses[0].title;
-  enrollDialog.showModal();
-});
-
-document.querySelector(".dialog-close").addEventListener("click", () => enrollDialog.close());
-enrollDialog.addEventListener("click", (event) => {
-  if (event.target === enrollDialog) enrollDialog.close();
-});
-
-document.querySelector("#enroll-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const values = Object.fromEntries(new FormData(form));
-  saveEntry("mrca-enrolment-requests", values);
-  form.reset();
-  enrollCourse.value = courses[0].title;
-  enrollDialog.close();
-  showToast("Your enrolment request is saved on this device. Thank you!");
-});
-
-document.querySelector("#contact-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const values = Object.fromEntries(new FormData(form));
-  try {
-    saveEntry("mrca-contact-enquiries", values);
-    form.reset();
-    form.querySelector(".form-status").textContent = "Thanks for reaching out — your message is saved on this device.";
-  } catch (error) {
-    console.error("Could not save your enquiry.", error);
-    form.querySelector(".form-status").textContent = "We couldn’t save your message. Please email rajabhassan345@gmail.com.";
+  const courseSelect = document.querySelector("#enrol-form [name='course']");
+  if (courseSelect && courses.some((course) => course.title === trigger.dataset.course)) {
+    courseSelect.value = trigger.dataset.course;
   }
+});
+
+const whatsappNumber = "254790295653";
+const enrolForm = document.querySelector("#enrol-form");
+const enrolStatus = document.querySelector("#enrol-status");
+const enrolFallback = document.querySelector("#enrol-whatsapp-fallback");
+
+function openWhatsApp(message, fallbackLink, status) {
+  const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+  fallbackLink.href = url;
+  fallbackLink.hidden = false;
+  status.textContent = "WhatsApp should open with your message ready. Review it and press send to complete your request. If it doesn’t open, use the link below.";
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function formValue(form, name) {
+  return String(new FormData(form).get(name) || "").trim();
+}
+
+enrolForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = formValue(enrolForm, "name");
+  const phone = formValue(enrolForm, "phone");
+  const email = formValue(enrolForm, "email");
+  if (!name || !phone || !enrolForm.elements.course.value) {
+    enrolStatus.textContent = "Please add your name, phone number, and choose a course.";
+    return;
+  }
+  if (email && !enrolForm.elements.email.validity.valid) {
+    enrolStatus.textContent = "Please enter a valid email address, or leave it blank.";
+    enrolForm.elements.email.focus();
+    return;
+  }
+  let message = `Hello, I would like to enrol in ${enrolForm.elements.course.value} (KSh 2,500).\nName: ${name}\nPhone: ${phone}`;
+  if (email) message += `\nEmail: ${email}`;
+  openWhatsApp(message, enrolFallback, enrolStatus);
+});
+
+const contactForm = document.querySelector("#contact-form");
+const contactFallback = document.querySelector("#contact-whatsapp-fallback");
+contactForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = formValue(contactForm, "name");
+  const message = formValue(contactForm, "message");
+  const status = contactForm.querySelector(".form-status");
+  if (!name || !message) {
+    status.textContent = "Please add your name and a message.";
+    return;
+  }
+  openWhatsApp(`Hello, I'm ${name}.\nTopic: ${formValue(contactForm, "topic")}\n${message}`, contactFallback, status);
+});
+
+document.querySelectorAll("[data-copy]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const value = button.dataset.copy;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable.");
+      await navigator.clipboard.writeText(value);
+      showToast("Copied to clipboard.");
+    } catch (error) {
+      console.warn("Could not copy payment detail.", error);
+      showToast(`Copy manually: ${value}`);
+    }
+  });
 });
 
 const assistantPanel = document.querySelector("#assistant-panel");
@@ -120,11 +138,14 @@ const assistantInput = document.querySelector("#assistant-input");
 
 function assistantAnswer(question) {
   const text = question.toLowerCase();
+  if (/paybill|business number|account number/.test(text)) {
+    return "M-Pesa Paybill: business number 522522; account number 5249110088068397 (enter without spaces). The fee is KSh 2,500 per course. Check the recipient name shown by M-Pesa before confirming.";
+  }
   if (/tutor|teacher|person|human|help me|talk to/.test(text)) {
     return "For one-to-one guidance, message Raj on WhatsApp at 0790 295 653 or email rajabhassan345@gmail.com. Use the “Talk to a tutor” link in the contact section to start a chat.";
   }
   if (/price|cost|fee|pay|payment|mpesa/.test(text)) {
-    return "Each course costs KSh 2,500. The courses are Adobe Illustrator, Adobe Photoshop, and Procreate. Tap “Start learning” to request enrolment.";
+    return "Each course costs KSh 2,500. You can pay by M-Pesa Paybill 522522, account number 5249110088068397. Use the “How to enrol” section to send your course request on WhatsApp.";
   }
   if (/illustrator|logo|vector|brand/.test(text)) {
     return "Adobe Illustrator covers vector drawing, logos, typography, colour, and print design in 10 practical lessons. It’s starter friendly and costs KSh 2,500.";
